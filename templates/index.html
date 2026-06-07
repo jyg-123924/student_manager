@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block content %}
+<form class="search-bar" method="get" action="{{ url_for('index') }}">
+  <input type="search" name="q" value="{{ keyword }}" placeholder="搜索姓名...">
+  <button type="submit" class="btn btn-secondary">搜索</button>
+</form>
+
+{% if students %}
+  {% for s in students %}
+  <div class="card">
+    <h3>{{ s.name }}</h3>
+    <div class="meta">学号：{{ s.student_no }}</div>
+    <div class="scores">
+      {% for subject, score in s.scores.items() %}
+      <div class="score-item"><span>{{ subject }}</span> {{ score }}</div>
+      {% endfor %}
+    </div>
+    <div class="avg">平均分：{{ "%.1f"|format(s.average) }}</div>
+    <div class="actions" style="margin-top:12px">
+      <a href="{{ url_for('edit_student', student_id=s.id) }}" class="btn btn-secondary btn-sm">修改</a>
+      <form method="post" action="{{ url_for('delete_student', student_id=s.id) }}" style="flex:1"
+            onsubmit="return confirm('确定删除 {{ s.name }} 吗？')">
+        <button type="submit" class="btn btn-danger btn-sm" style="width:100%">删除</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty">
+  {% if keyword %}
+    未找到「{{ keyword }}」相关学生
+  {% else %}
+    暂无学生，点击右下角 + 添加
+  {% endif %}
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block fab %}
+<a href="{{ url_for('add_student') }}" class="fab">+</a>
+{% endblock %}

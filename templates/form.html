@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}{% if action == 'add' %}添加学生{% else %}修改学生{% endif %}{% endblock %}
+{% block header %}{% if action == 'add' %}添加学生{% else %}修改学生{% endif %}{% endblock %}
+
+{% block content %}
+<form method="post">
+  <div class="card">
+    <div class="form-group">
+      <label for="name">姓名</label>
+      <input type="text" id="name" name="name" required
+             value="{{ student.name if student else '' }}" placeholder="请输入姓名">
+    </div>
+    <div class="form-group">
+      <label for="student_no">学号</label>
+      <input type="text" id="student_no" name="student_no" required
+             value="{{ student.student_no if student else '' }}" placeholder="请输入学号">
+    </div>
+    <div class="section-title">各科成绩（0~100，可留空）</div>
+    {% set subjects = ['语文', '数学', '英语', '计算机'] %}
+    {% for subject in subjects %}
+    <div class="form-group">
+      <label for="{{ subject }}">{{ subject }}</label>
+      <input type="number" id="{{ subject }}" name="{{ subject }}"
+             min="0" max="100" step="0.5"
+             value="{{ student.scores.get(subject, '') if student else '' }}"
+             placeholder="0~100">
+    </div>
+    {% endfor %}
+  </div>
+  <button type="submit" class="btn btn-primary btn-block">
+    {% if action == 'add' %}添加{% else %}保存修改{% endif %}
+  </button>
+  <a href="{{ url_for('index') }}" class="btn btn-secondary btn-block" style="margin-top:10px">取消</a>
+</form>
+{% endblock %}
