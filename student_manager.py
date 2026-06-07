@@ -4,10 +4,12 @@ import json
 import os
 import uuid
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from typing import Any
 
 
 DEFAULT_DATA_FILE = os.path.join(os.path.dirname(__file__), "students.json")
+DEFAULT_TRASH_FILE = os.path.join(os.path.dirname(__file__), "trash.json")
 
 
 @dataclass
@@ -38,13 +40,39 @@ class Student:
         return sum(self.scores.values()) / len(self.scores)
 
 
+@dataclass
+class TrashedStudent:
+    """回收站中的学生记录。"""
+
+    student: Student
+    deleted_at: str
+
+    def to_dict(self) -> dict[str, Any]:
+        data = self.student.to_dict()
+        data["deleted_at"] = self.deleted_at
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "TrashedStudent":
+        deleted_at = data["deleted_at"]
+        student_data = {k: v for k, v in data.items() if k != "deleted_at"}
+        return cls(student=Student.from_dict(student_data), deleted_at=deleted_at)
+
+
 class StudentManager:
     """学生成绩管理器，负责 CRUD 与 JSON 持久化。"""
 
-    def __init__(self, data_file: str = DEFAULT_DATA_FILE) -> None:
+    def __init__(
+        self,
+        data_file: str = DEFAULT_DATA_FILE,
+        trash_file: str = DEFAULT_TRASH_FILE,
+    ) -> None:
         self.data_file = data_file
+        self.trash_file = trash_file
         self._students: dict[str, Student] = {}
+        self._trash: dict[str, TrashedStudent] = {}
         self._load()
+        self._load_trash()
 
     def _load(self) -> None:
         if not os.path.exists(self.data_file):
@@ -56,9 +84,24 @@ class StudentManager:
             item["id"]: Student.from_dict(item) for item in raw
         }
 
+    def _load_trash(self) -> None:
+        if not os.path.exists(self.trash_file):
+            self._save_trash()
+            return
+        with open(self.trash_file, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        self._trash = {
+            item["id"]: TrashedStudent.from_dict(item) for item in raw
+        }
+
     def _save(self) -> None:
         data = [s.to_dict() for s in self._students.values()]
         with open(self.data_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def _save_trash(self) -> None:
+        data = [t.to_dict() for t in self._trash.values()]
+        with open(self.trash_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     def add(
@@ -76,19 +119,62 @@ class StudentManager:
         return student
 
     def delete(self, student_id: str) -> Student:
-        """按 ID 删除学生。"""
+        """将学生移入回收站（软删除）。"""
         student = self._students.pop(student_id, None)
         if student is None:
             raise KeyError(f"未找到 ID 为 {student_id} 的学生")
+        trashed = TrashedStudent(
+            student=student,
+            deleted_at=datetime.now().isoformat(timespec="seconds"),
+        )
+        self._trash[student_id] = trashed
         self._save()
+        self._save_trash()
         return student
 
     def delete_by_student_no(self, student_no: str) -> Student:
-        """按学号删除学生。"""
+        """按学号将学生移入回收站。"""
         student = self.get_by_student_no(student_no)
         if student is None:
             raise KeyError(f"未找到学号为 {student_no} 的学生")
         return self.delete(student.id)
+
+    def restore(self, student_id: str) -> Student:
+        """从回收站恢复学生。"""
+        trashed = self._trash.pop(student_id, None)
+        if trashed is None:
+            raise KeyError(f"回收站中未找到 ID 为 {student_id} 的学生")
+        student = trashed.student
+        if self.get_by_student_no(student.student_no):
+            self._trash[student_id] = trashed
+            self._save_trash()
+            raise ValueError(
+                f"学号 {student.student_no} 已被其他学生占用，无法恢复"
+            )
+        self._students[student.id] = student
+        self._save()
+        self._save_trash()
+        return student
+
+    def permanent_delete(self, student_id: str) -> Student:
+        """从回收站彻底删除学生。"""
+        trashed = self._trash.pop(student_id, None)
+        if trashed is None:
+            raise KeyError(f"回收站中未找到 ID 为 {student_id} 的学生")
+        self._save_trash()
+        return trashed.student
+
+    def get_trashed(self, student_id: str) -> TrashedStudent | None:
+        """查询回收站中的学生。"""
+        return self._trash.get(student_id)
+
+    def list_trash(self) -> list[TrashedStudent]:
+        """返回回收站列表（最近删除的在前）。"""
+        return sorted(
+            self._trash.values(),
+            key=lambda t: t.deleted_at,
+            reverse=True,
+        )
 
     def update(
         self,
@@ -207,11 +293,69 @@ def _handle_add(manager: StudentManager) -> None:
 
 def _handle_delete(manager: StudentManager) -> None:
     student_no = _input_non_empty("请输入要删除的学号: ")
+    student = manager.get_by_student_no(student_no)
+    if student is None:
+        print(f"\n未找到学号为 {student_no} 的学生")
+        return
+    confirm = input(
+        f"确定将 {student.name}（{student.student_no}）移入回收站吗？(y/n): "
+    ).strip().lower()
+    if confirm != "y":
+        print("\n已取消删除。")
+        return
     try:
-        student = manager.delete_by_student_no(student_no)
-        print(f"\n已删除学生: {student.name} ({student.student_no})")
+        manager.delete(student.id)
+        print(f"\n已移入回收站: {student.name} ({student.student_no})")
     except KeyError as e:
         print(f"\n删除失败: {e}")
+
+
+def _handle_trash(manager: StudentManager) -> None:
+    trashed = manager.list_trash()
+    if not trashed:
+        print("\n回收站为空。")
+        return
+
+    print("\n========== 回收站 ==========")
+    for i, item in enumerate(trashed, 1):
+        print(f"\n--- 第 {i} 条（删除于 {item.deleted_at}）---")
+        print(format_student(item.student))
+
+    print("\n1. 恢复  2. 彻底删除  0. 返回")
+    choice = input("请选择: ").strip()
+    if choice == "0":
+        return
+
+    student_no = _input_non_empty("请输入学号: ")
+    target = None
+    for item in trashed:
+        if item.student.student_no == student_no:
+            target = item
+            break
+    if target is None:
+        print(f"\n回收站中未找到学号为 {student_no} 的学生")
+        return
+
+    if choice == "1":
+        try:
+            restored = manager.restore(target.student.id)
+            print(f"\n已恢复学生: {restored.name} ({restored.student_no})")
+        except (KeyError, ValueError) as e:
+            print(f"\n恢复失败: {e}")
+    elif choice == "2":
+        confirm = input(
+            f"确定彻底删除 {target.student.name} 吗？此操作不可恢复！(y/n): "
+        ).strip().lower()
+        if confirm != "y":
+            print("\n已取消。")
+            return
+        try:
+            manager.permanent_delete(target.student.id)
+            print(f"\n已彻底删除: {target.student.name}")
+        except KeyError as e:
+            print(f"\n删除失败: {e}")
+    else:
+        print("无效选项。")
 
 
 def _handle_update(manager: StudentManager) -> None:
@@ -270,6 +414,7 @@ def main() -> None:
   2. 删除学生
   3. 修改学生
   4. 查询学生
+  5. 回收站
   0. 退出
 ======================================
 """
@@ -278,6 +423,7 @@ def main() -> None:
         "2": _handle_delete,
         "3": _handle_update,
         "4": _handle_query,
+        "5": _handle_trash,
     }
 
     print("欢迎使用学生成绩管理系统！")
