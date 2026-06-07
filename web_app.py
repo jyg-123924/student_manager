@@ -78,10 +78,35 @@ def edit_student(student_id: str):
 def delete_student(student_id: str):
     try:
         student = manager.delete(student_id)
-        flash(f"已删除学生：{student.name}", "success")
+        flash(f"已移入回收站：{student.name}", "success")
     except KeyError as e:
         flash(str(e), "error")
     return redirect(url_for("index"))
+
+
+@app.route("/trash")
+def trash():
+    return render_template("trash.html", trashed=manager.list_trash())
+
+
+@app.route("/trash/restore/<student_id>", methods=["POST"])
+def restore_student(student_id: str):
+    try:
+        student = manager.restore(student_id)
+        flash(f"已恢复学生：{student.name}", "success")
+    except (KeyError, ValueError) as e:
+        flash(str(e), "error")
+    return redirect(url_for("trash"))
+
+
+@app.route("/trash/delete/<student_id>", methods=["POST"])
+def permanent_delete_student(student_id: str):
+    try:
+        student = manager.permanent_delete(student_id)
+        flash(f"已彻底删除：{student.name}", "success")
+    except KeyError as e:
+        flash(str(e), "error")
+    return redirect(url_for("trash"))
 
 
 def _local_ip() -> str:
