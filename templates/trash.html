@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}回收站{% endblock %}
+{% block header %}回收站{% endblock %}
+
+{% block content %}
+<a href="{{ url_for('index') }}" class="btn btn-secondary btn-sm" style="margin-bottom:16px">返回列表</a>
+
+{% if trashed %}
+  {% for item in trashed %}
+  <div class="card">
+    <h3>{{ item.student.name }}</h3>
+    <div class="meta">学号：{{ item.student.student_no }} · 删除于 {{ item.deleted_at }}</div>
+    <div class="scores">
+      {% for subject, score in item.student.scores.items() %}
+      <div class="score-item"><span>{{ subject }}</span> {{ score }}</div>
+      {% endfor %}
+    </div>
+    <div class="avg">平均分：{{ "%.1f"|format(item.student.average) }}</div>
+    <div class="actions" style="margin-top:12px">
+      <form method="post" action="{{ url_for('restore_student', student_id=item.student.id) }}" style="flex:1">
+        <button type="submit" class="btn btn-primary btn-sm" style="width:100%">恢复</button>
+      </form>
+      <form method="post" action="{{ url_for('permanent_delete_student', student_id=item.student.id) }}" style="flex:1"
+            onsubmit="return confirm('确定彻底删除 {{ item.student.name }} 吗？此操作不可恢复！')">
+        <button type="submit" class="btn btn-danger btn-sm" style="width:100%">彻底删除</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="empty">回收站为空</div>
+{% endif %}
+{% endblock %}
